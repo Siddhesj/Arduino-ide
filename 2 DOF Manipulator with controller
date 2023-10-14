@@ -1,0 +1,86 @@
+
+// Software Serial Sample
+// Copyright (c) 2012 Dimension Engineering LLC
+// See license.txt for license details.
+
+#include <usbhid.h>
+#include <hiduniversal.h>
+#include <usbhub.h>
+#include <SPI.h>
+#include "hidjoystickrptparser.h"
+
+USB Usb;
+USBHub Hub(&Usb);
+HIDUniversal Hid(&Usb);
+JoystickEvents JoyEvents;
+JoystickReportParser Joy(&JoyEvents);
+
+
+#include <SoftwareSerial.h>
+#include <SabertoothSimplified.h>
+
+SoftwareSerial SWSerial(NOT_A_PIN, 13); // RX on no pin (unused), TX on pin 11 (to S1).
+SabertoothSimplified ST(SWSerial); // Use SWSerial as the serial port.
+
+
+
+
+void setup() {
+  // put your setup code here, to run once:
+  SWSerial.begin(9600);
+
+  Serial.begin(115200);
+
+
+#if !defined(__MIPSEL__)
+  while (!Serial); // Wait for serial port to connect - used on Leonardo, Teensy and other boards with built-in USB CDC serial connection
+#endif
+  Serial.println("Start");
+
+  while (Usb.Init() == -1)
+    Serial.println("OSC did not start.");
+
+  delay(200);
+
+  if (!Hid.SetReportParser(0, &Joy))
+    ErrorMessage<uint8_t > (PSTR("SetReportParser"), 1);
+
+}
+
+void loop() {
+
+  Usb.Task();
+
+  float Buttons = JoyEvents.bu;
+  float rxa = JoyEvents.rx;          //         map(JoyEvents.rx, 0, 127, 0, 1023); // map(JoyEvents.Z2, 0, 0xFF, 0.f, 255.f);
+  float rya = JoyEvents.ry;
+  float lxa =  JoyEvents.lx;        //  map( JoyEvents.lx, 0, 127,0, 1023);      //map(JoyEvents.Y, 0, 0xFF, 0.f, 255.f);
+  float lya = JoyEvents.ly;   
+
+  lxa = lxa - 128;
+  lya = lya - 127;
+  rxa = rxa - 128;
+  rya = rya - 127;
+//  if ( rxa >= -40 || rya <= 40){
+//    rxa = 0;
+//  }
+  if (rya >= -40 && rya <= 40) {
+    rya = 0;
+  }
+
+  float base = map(rxa,-128,128,-40,40);
+  float g = map(rya,-128,128,-180,180);
+  ST.motor(2,- g);
+  ST.motor(1,base);
+  
+  Serial.print("Right X: ");
+  Serial.print(base);
+  Serial.print("  RIGHT y: ");
+  Serial.print(g);
+  Serial.println("");
+
+  
+
+  // put your main code here, to run repeatedly:
+
+}

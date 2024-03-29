@@ -1,0 +1,120 @@
+// Software Serial Sample
+// Copyright (c) 2012 Dimension Engineering LLC
+// See license.txt for license details.
+ 
+#include <SoftwareSerial.h>
+#include <SabertoothSimplified.h>
+ 
+SoftwareSerial SWSerial(NOT_A_PIN, 11); // RX on no pin (unused), TX on pin 11 (to S1).
+SabertoothSimplified ST(SWSerial); // Use SWSerial as the serial port.
+#define Encodera 2
+#define Encoderb 3
+#define Encoderc 20
+#define Encoderd 21
+
+
+
+int count = 0;
+volatile int laststate = LOW;
+float Kp = 2;
+float Kd = 0;
+float Ki = 0;
+float error;
+float D;
+float I;
+float P;
+int setpoint = 36;
+float preverror = 0;
+
+
+int count_1 = 0;
+volatile int laststate_1 = LOW;
+float Kp1 = 1;
+float Kd1 = 0.1;
+float Ki1 = 0;
+float error1;
+float D1;
+float I1;
+float P1;
+int setpoint1 = 1504;
+float preverror1 = 0; 
+
+ 
+void setup()
+{
+  SWSerial.begin(9600);
+  Serial.begin(115200);
+  pinMode(Encodera, INPUT_PULLUP);
+  pinMode(Encoderb, INPUT_PULLUP);
+  pinMode(Encoderc, INPUT_PULLUP);
+  pinMode(Encoderd, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(Encodera), r, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(Encoderc), g, CHANGE);
+  pinMode(13, OUTPUT);
+  SWSerial.begin(9600);
+}
+ 
+void loop()
+{
+Serial.print(" | Reading 1:  ");
+  Serial.print(count);
+  Serial.print("");
+  error = setpoint - count;
+  P = error;
+  I = I + error;
+  D = error - preverror;
+  int R = Kp * P + Ki * I + Kd * D;
+  preverror = error;
+
+
+Serial.print(" | Reading 2:  ");
+  Serial.print(count_1);
+  Serial.print("");
+  error1 = setpoint1 - count_1;
+  P1 = error1;
+  I1 = I1 + error1;
+  D1 = error1 - preverror1;
+  int G = Kp1 * P1 + Ki1 * I1 + Kd1 * D1;
+  preverror1 = error1;
+ G=map(G,0,1504,-127,127);
+
+//int sp = map(R,0,2640,-127,127);
+int  sp=constrain(R, -20, 20);
+ 
+Serial.print(" speed 1: ");
+Serial.println(sp);
+//Serial.print(" | Speed 2: ");
+//Serial.print(sp1);
+
+ST.motor(2, G);
+ST.motor(1, sp );
+
+}
+void r() {
+  int k = digitalRead(Encoderb);
+  int n = digitalRead(Encodera);
+  if (k != laststate) {
+    if (n != k) {
+      count++;
+    }
+ 
+    else {
+      count--;
+    }
+  }
+  laststate = k;
+}
+void g() {
+  int j = digitalRead(Encoderd);
+  int l = digitalRead(Encoderc);
+  if (j != laststate_1) {
+    if (l != j) {
+      count_1++;
+    }
+ 
+    else {
+      count_1--;
+    }
+  }
+  laststate_1 = j;
+}

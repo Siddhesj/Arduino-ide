@@ -1,0 +1,306 @@
+ #include <usbhid.h>
+#include <hiduniversal.h>
+#include <usbhub.h>
+#include <SPI.h>
+#include "hidjoystickrptparser.h"
+
+USB Usb;
+USBHub Hub(&Usb);
+HIDUniversal Hid(&Usb);
+JoystickEvents JoyEvents;
+JoystickReportParser Joy(&JoyEvents);
+#include <SoftwareSerial.h>
+#include <SabertoothSimplified.h>
+
+SoftwareSerial SWSerial(NOT_A_PIN, 40 ); // RX on no pin (unused), TX on pin 11 (to S1).
+SabertoothSimplified ST(SWSerial); // Use SWSerial as the serial port.
+
+SoftwareSerial SWSerial1(NOT_A_PIN, 13); // RX on no pin (unused), TX on pin 11 (to S1).
+SabertoothSimplified ST1(SWSerial1); // Use SWSerial as the serial port.
+
+#include <Wire.h>
+#include <MPU6050.h>
+
+MPU6050 mpu;
+
+// Timers
+unsigned long timer = 0;
+float timeStep = 0.02;
+
+// Pitch, Roll and Yaw values
+
+float yaw = 0;
+float setpoint = 0;
+float yaw_error;
+float preError;
+float pid;
+int cnt ;
+float kp = 20;
+float ki = 0.00003  ;
+float kd = 16;
+int b_old = 0;
+int l = 0;
+int l1 = 0;
+int r1 = 0;
+int y = 0;
+int g = 0;
+int b = 0;
+  int ref1=0; // for -180 degree
+  int ref2 = 0; // for +180 degree
+  int ref3 = 0; // for -360 degree
+  int ref4 = 0; // for +360 degree
+float m1;
+float m2;
+float m3;
+float m4;
+
+void setup()
+{
+  Serial.begin(115200);
+  // Initialize MPU6050
+  while (!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
+  {
+    Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
+    delay(500);
+  }
+  mpu.calibrateGyro();
+  mpu.setThreshold(3);
+
+
+
+#if !defined(MIPSEL)
+  while (!Serial); // Wait for serial port to connect - used on Leonardo, Teensy and other boards with built-in USB CDC serial connection
+#endif
+  Serial.println("Start");
+
+  while (Usb.Init() == -1)
+    Serial.println("OSC did not start.");
+
+  delay(200);
+
+  if (!Hid.SetReportParser(0, &Joy))
+    ErrorMessage<uint8_t > (PSTR("SetReportParser"), 1);
+  SWSerial.begin(9600);
+  SWSerial1.begin(9600);
+
+
+}
+
+void loop()
+{
+  timer = millis();
+  Vector norm = mpu.readNormalizeGyro();
+  yaw = yaw + norm.ZAxis * timeStep;
+
+  //*******************pid equation*****************//
+
+  float yaw_error = setpoint - yaw;
+  float P =  yaw_error;
+  float I = I + yaw_error;
+  float D = preError - yaw_error;
+
+  pid = kp * yaw_error + ki * I + kd * D;
+
+  //***************************logitech map****************//
+  Usb.Task();
+  float red = Joy.red;
+  float rxa = JoyEvents.rx;          //         map(JoyEvents.rx, 0, 127, 0, 1023); // map(JoyEvents.Z2, 0, 0xFF, 0.f, 255.f);
+  float rya = JoyEvents.ry;// map(JoyEvents.ry, 0, 127, 0, 1023); // map(JoyEvents.Rz, 0, 0xFF, 0.f, 255.f);
+  float blue = Joy.blue;
+  float L2 = Joy.lt;
+  float R2 = Joy.rt;
+  float yellow = Joy.yellow;
+  float green = Joy.green;
+  float L1 = Joy.lb;
+  float R1 = Joy.rb;
+    float leftjoy = Joy.jl;
+  float rightjoy = Joy.jr;
+  float lxa =  JoyEvents.lx;
+  float lya = JoyEvents.ly;
+  rxa = rxa - 128;
+  rya = rya - 127;
+  lxa = lxa - 128;
+  lya = lya - 127;
+
+  if (rxa > -30 && rxa < 30) {
+    rxa = 0;
+  }
+  if (rya > -30 && rya < 30) {
+    rya = 0;
+  }
+
+
+  //*****************************END OF LOGITECH MAP*******************************//
+  float theta = atan2(-rya, rxa);
+  theta = theta * 180 / 3.14;
+//theta = theta - setpoint;
+  float t = atan2(-lya, lxa);
+  t = t * 180 / 3.14;
+
+//  *******************Straight and Backward***************************//
+  if (yellow != y || green != g) {
+    if (yellow == 1) {
+      rya = -127;
+      theta = 90.05;
+    }
+    if (green == 1) {
+      rya = 128;
+      theta = -90.05;
+    }
+  }
+
+  yellow = y;
+  green = g;
+  //__________________________________________________________________//
+
+  
+  float left = sqrt(lxa * lxa + lya * lya);
+
+  float vl1 = left * sin((t - 45) * 3.14 / 180);
+  float vl2 = left * sin((135 - t) * 3.14 / 180);
+  float vl3 = left * sin((t - 45) * 3.14 / 180);
+  float vl4 = left * sin((135 - t) * 3.14 / 180);
+vl1=map(vl1,-225,225,-200,200);
+vl2=map(vl2,-225,225,-200,200);
+vl3=map(vl3,-225,225,-200,200);
+vl4=map(vl1,-225,225,-200,200);
+
+
+  float v1 = vr1+ vl1;
+  float v2 = vr2+vl2;
+  float v3 = vr3 + vl3;
+  float v4 = vr4 + vl4;
+
+  m1 = v1 + pid;
+  m2 = v2 - pid;
+  m3 = v3 - pid;
+  m4 = v4 + pid;
+
+
+  ST.motor(1,  m1);
+  ST.motor(2,  m2);
+  ST1.motor(2,  m3);
+  ST1.motor(1,  m4);
+
+
+  // *****************90 degree ********************//
+  if(blue==0){
+  if (R2 != b_old || L2 != l) {
+    if (R2 == 1) {
+      setpoint -= 90;
+    }
+    if (L2 == 1) {
+      setpoint += 90;
+    }
+  }
+  b_old = R2;
+  l = L2;
+  }
+//________________________________________________//
+  
+  //****************** 180 degree************************//
+
+
+  if (blue == 1) {
+    if (L2 == 1 && ref1 ==0 && cnt%2 == 0){
+      setpoint+=180;
+      ref1=1;
+       
+    }
+    ref1=L2;
+    if (R2 == 1 && ref2 ==0 && cnt%2 == 0){
+      setpoint-=180;
+      ref2=1;
+       
+    }
+    ref2=R2;
+  }
+
+// ***************360 degree ********************//
+
+if (red == 1) {
+    if (L2 == 1 && ref3 ==0 && cnt%2 == 0){
+      setpoint+=360;
+      ref3=1;
+       
+    }
+    ref3=L2;
+    
+    if (R2 == 1 && ref4 ==0 && cnt%2 == 0){
+      setpoint-=360;
+      ref4=1;
+       
+    }
+    ref4=R2;
+  }
+//____________________________________________________//
+
+
+
+//***************************************Serial print****************************************//
+
+Serial.print(" | left ");
+Serial.print(left);
+
+Serial.print(" | right ");
+Serial.print(right);
+
+Serial.print(" | Vr1 ");
+Serial.print(vr1);
+Serial.print(" | Vr2");
+Serial.print(vr2);
+Serial.print(" | Vr3 ");
+Serial.print(vr3);
+Serial.print(" | Vr4 ");
+Serial.print(vr4);
+Serial.print(" | Vl1 ");
+Serial.print(vl1);
+Serial.print(" | Vl2 ");
+Serial.print(vl2);
+Serial.print(" | Vl3 ");
+Serial.print(vl3);
+Serial.print(" | Vl4 ");
+Serial.print(vl4);
+
+
+
+Serial.print(" rightjoy: ");
+Serial.print(rightjoy);
+
+Serial.print(" leftjoy: ");
+Serial.print(leftjoy);
+  
+
+Serial.print(" v1=");
+  Serial.print(v1);
+  Serial.print("| v2=");
+  Serial.print(v2);
+  Serial.print("| rxa=");
+  Serial.print(rxa);
+  Serial.print("| rya=");
+  Serial.print(rya);
+  Serial.print("  pid: ");
+  Serial.print(pid);
+  Serial.print(" | yeaw_error: ");
+  Serial.print(yaw_error);
+  Serial.print(" | yaw ");
+  Serial.print(yaw);
+  Serial.print("  I ");
+  Serial.print(I);
+  Serial.print(" | D ");
+  Serial.print(D);
+  Serial.print("| theta");
+  Serial.print(theta);
+  Serial.print(" m1=");
+  Serial.print(m1);
+  Serial.print("| m2=");
+  Serial.print(m2);
+   Serial.print("| m3=");
+  Serial.print(m3);
+   Serial.print("| m4=");
+  Serial.print(m4);
+  Serial.print("| lxa=");
+  Serial.print(lxa);
+  Serial.print("| lya=");
+  Serial.println(lya);
+}

@@ -1,0 +1,55 @@
+#include <SoftwareSerial.h>
+
+// Create software serial pins: pin 2 as RX & 3 as TX
+SoftwareSerial mySerial(2, 3);
+
+// Define the phone number to call
+char * number = "+91 XXXXXXXXXX";
+
+void setup() {
+  Serial.begin(9600);
+  mySerial.begin(9600);
+  Serial.println("Initializing...");
+  delay(1000);
+
+  // Send attention command to check if all fine, it returns OK
+  mySerial.println("AT");
+  updateSerial();
+
+  // Configuring module in TEXT mode
+  mySerial.println("AT+CMGF=1");
+  updateSerial();
+
+  // Decides how newly arrived SMS messages should be handled
+  mySerial.println("AT+CNMI=1,2,0,0,0");
+  updateSerial();
+}
+
+void loop() {
+  updateSerial();
+
+  // If a button is pressed, call the number
+  if (digitalRead(4) == HIGH) {
+    callNumber(number);
+  }
+}
+
+// For data transmission from Serial to Software Serial port & vice versa
+void updateSerial() {
+  delay(500);
+  while (Serial.available()) {
+    mySerial.write(Serial.read());//Forward what Serial received to Software Serial Port
+  }
+  while (mySerial.available()) {
+    Serial.write(mySerial.read());//Forward what Software Serial received to Serial Port
+  }
+}
+
+// Function to make a call to a given number
+void callNumber(char * number) {
+  if (!gsm.callPhone(number)) {
+    Serial.println(F("Failed"));
+  } else {
+    Serial.println(F("Sent!"));
+  }
+}
